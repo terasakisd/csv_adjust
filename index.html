@@ -89,23 +89,31 @@
       return `${date.getFullYear()}/${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')}`;
     }
     
-    function formatDateShort(date) {
-      return `${String(date.getMonth()+1).padStart(2,'0')}${String(date.getDate()).padStart(2,'0')}`;
+    function getTodayShort() {
+      const today = new Date();
+      return `${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
     }
     
     const dates = getWeekDates();
     document.getElementById('dateInfo').textContent = 
       `出力日付: ${formatDate(dates.lastSunday)}〜${formatDate(dates.lastSaturday)} vs ${formatDate(dates.prevSunday)}〜${formatDate(dates.prevSaturday)}`;
     
+    function cleanFileName(originalName) {
+      let baseName = originalName.replace(/\.(csv|xlsx)$/i, '');
+      baseName = baseName.replace(/_*無題の.*$/g, '');
+      baseName = baseName.replace(/_+$/, '');
+      return baseName;
+    }
+    
     function generateFileName(originalName) {
-      const d = getWeekDates();
-      const baseName = originalName.replace(/\.(csv|xlsx)$/i, '');
-      return `${baseName}_${formatDateShort(d.lastSunday)}-${formatDateShort(d.lastSaturday)}_vs_${formatDateShort(d.prevSunday)}-${formatDateShort(d.prevSaturday)}.xlsx`;
+      const baseName = cleanFileName(originalName);
+      const todayStr = getTodayShort();
+      return `${baseName}_${todayStr}取得.xlsx`;
     }
     
     function generateZipName() {
-      const d = getWeekDates();
-      return `サーチコンソール_${formatDateShort(d.lastSunday)}-${formatDateShort(d.lastSaturday)}_vs_${formatDateShort(d.prevSunday)}-${formatDateShort(d.prevSaturday)}.zip`;
+      const todayStr = getTodayShort();
+      return `サーチコンソール_${todayStr}.zip`;
     }
     
     const uploadArea = document.getElementById('uploadArea');
@@ -300,11 +308,8 @@
           parseNum(row[colMap.posLast]), parseNum(row[colMap.posPrev]), parseNum(row[colMap.posDiff])
         ]);
         
-        // クリック数比較にプラスマイナス
         dataRow.getCell(4).numFmt = '+#,##0;-#,##0;0';
-        // 表示回数比較にプラスマイナス
         dataRow.getCell(7).numFmt = '+#,##0;-#,##0;0';
-        // 掲載順位
         dataRow.getCell(11).numFmt = '0.00';
         dataRow.getCell(12).numFmt = '0.00';
         dataRow.getCell(13).numFmt = '+0.00;-0.00;0.00';
