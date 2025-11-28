@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>サーチコンソール データ整形ツール</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f5; padding: 40px 20px; }
+    .container { max-width: 600px; margin: 0 auto; }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: #333; }
+    .upload-area {
+      background: #fff; border: 2px dashed #ccc; border-radius: 8px;
+      padding: 40px; text-align: center; cursor: pointer; margin-bottom: 20px;
+    }
+    .upload-area:hover { border-color: #666; }
+    .upload-area p { color: #666; font-size: 14px; }
+    #fileInput { display: none; }
+    .file-list { background: #fff; border-radius: 8px; margin-bottom: 20px; }
+    .file-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 16px; border-bottom: 1px solid #eee;
+    }
+    .file-item:last-child { border-bottom: none; }
+    .file-name { font-size: 13px; color: #333; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-status { font-size: 12px; margin-left: 10px; }
+    .file-status.ready { color: #666; }
+    .file-status.done { color: #22c55e; }
+    .file-status.error { color: #ef4444; }
+    .btn-download {
+      background: #333; color: #fff; border: none; border-radius: 4px;
+      padding: 6px 12px; font-size: 12px; cursor: pointer; margin-left: 10px;
+    }
+    .btn-download:hover { background: #555; }
+    .btn-remove {
+      background: none; border: none; color: #999; cursor: pointer;
+      font-size: 16px; margin-left: 8px;
+    }
+    .btn-remove:hover { color: #333; }
+    .btn-all {
+      width: 100%; background: #333; color: #fff; border: none;
+      border-radius: 8px; padding: 14px; font-size: 14px; cursor: pointer;
+    }
+    .btn-all:hover { background: #555; }
+    .btn-all:disabled { background: #ccc; cursor: not-allowed; }
+    .date-info { font-size: 12px; color: #666; margin-top: 16px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>サーチコンソール データ整形</h1>
+    
+    <div class="upload-area" id="uploadArea">
+      <p>ファイルをドロップ または クリックして選択</p>
+      <p style="font-size:12px; color:#999; margin-top:8px;">複数ファイル対応（.csv, .xlsx）</p>
+    </div>
+    <input type="file" id="fileInput" accept=".xlsx,.csv" multiple>
+    
+    <div class="file-list" id="fileList" style="display:none;"></div>
+    
+    <button class="btn-all" id="btnDownloadZip" style="display:none;">ZIPでまとめてダウンロード</button>
+    
+    <p class="date-info" id="dateInfo"></p>
+  </div>
+
+  <script>
+    const files = new Map();
+    
+    function getWeekDates() {
+      const today = new Date();
+      const dayOfWeek = today.getDay();
+      const daysSinceSunday = dayOfWeek === 0 ? 7 : dayOfWeek;
+      const lastSaturday = new Date(today);
+      lastSaturday.setDate(today.getDate() - daysSinceSunday - 1);
+      const lastSunday = new Date(lastSaturday);
+      lastSunday.setDate(lastSaturday.getDate() - 6);
+      const prevSaturday = new Date(lastSunday);
+      prevSaturday.setDate(lastSunday.getDate() - 1);
+      const prevSunday = new Date(prevSaturday);
+      prevSunday.setDate(prevSaturday.getDate() - 6);
+      return { lastSunday, lastSaturday, prevSunday, prevSaturday };
+    }
+    
+    function formatDate(date) {
+      return `${date.getFullYear()}/${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')}`;
+    }
+    
+    function getTodayShort() {
+      const today = new Date();
+      return `${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    }
+    
+    const dates = getWeekDates();
+    document.getElementById('dateInfo').textContent = 
+      `出力日付: ${formatDate(dates.lastSunday)}〜${formatDate(dates.lastSaturday)} vs ${formatDate(dates.prevSunday)}〜${formatDate(dates.prevSaturday)}`;
+    
+    function cleanFileName(originalName) {
+      let baseName = originalName.replace(/\.(csv|xlsx)$/i, '');
+      baseName = baseName.replace(/_*無題の.*$/g, '');
+      baseName = baseName.replace(/_+$/, '');
+      return baseName;
+    }
+    
+    function generateFileName(originalName) {
+      const baseName = cleanFileName(originalName);
+      const todayStr = getTodayShort();
+      return `${baseName}_${todayStr}取得.xlsx`;
+    }
+    
+    function generateZipName() {
+      const todayStr = getTodayShort();
+      return `サーチコンソール_${todayStr}.zip`;
+    }
+    
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const fileList = document.getElementById('fileList');
+    const btnDownloadZip = document.getElementById('btnDownloadZip');
+    
+    uploadArea.addEventListener('click', () => fileInput.click());
+    uploadArea.addEventListener('dragover', (e) => e.preventDefault());
+    uploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      handleFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+    
+    function handleFiles(fileListInput) {
+      for (const file of fileListInput) {
+        if (!files.has(file.name)) {
+          files.set(file.name, { file, status: 'ready', buffer: null });
+          processFile(file);
+        }
+      }
+      renderFileList();
+    }
+    
+    function renderFileList() {
+      if (files.size === 0) {
+        fileList.style.display = 'none';
+        btnDownloadZip.style.display = 'none';
+        return;
+      }
+      
+      fileList.style.display = 'block';
+      fileList.innerHTML = '';
+      
+      let doneCount = 0;
+      files.forEach((data, name) => {
+        const item = document.createElement('div');
+        item.className = 'file-item';
+        
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'file-name';
+        nameSpan.textContent = name;
+        item.appendChild(nameSpan);
+        
+        const statusSpan = document.createElement('span');
+        statusSpan.className = `file-status ${data.status}`;
+        statusSpan.textContent = data.status === 'ready' ? '処理中...' : data.status === 'done' ? '完了' : 'エラー';
+        item.appendChild(statusSpan);
+        
+        if (data.status === 'done' && data.buffer) {
+          doneCount++;
+          const dlBtn = document.createElement('button');
+          dlBtn.className = 'btn-download';
+          dlBtn.textContent = 'DL';
+          dlBtn.onclick = () => downloadFile(name, data.buffer);
+          item.appendChild(dlBtn);
+        }
+        
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'btn-remove';
+        removeBtn.textContent = '×';
+        removeBtn.onclick = () => { files.delete(name); renderFileList(); };
+        item.appendChild(removeBtn);
+        
+        fileList.appendChild(item);
+      });
+      
+      btnDownloadZip.style.display = doneCount >= 1 ? 'block' : 'none';
+      btnDownloadZip.textContent = doneCount > 1 ? 'ZIPでまとめてダウンロード' : 'ダウンロード';
+    }
+    
+    function downloadFile(name, buffer) {
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      saveAs(blob, generateFileName(name));
+    }
+    
+    btnDownloadZip.addEventListener('click', async () => {
+      const doneFiles = [];
+      files.forEach((data, name) => {
+        if (data.status === 'done' && data.buffer) {
+          doneFiles.push({ name, buffer: data.buffer });
+        }
+      });
+      
+      if (doneFiles.length === 1) {
+        downloadFile(doneFiles[0].name, doneFiles[0].buffer);
+        return;
+      }
+      
+      const zip = new JSZip();
+      doneFiles.forEach(({ name, buffer }) => {
+        zip.file(generateFileName(name), buffer);
+      });
+      
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      saveAs(zipBlob, generateZipName());
+    });
+    
+    function parseNum(val) {
+      if (val === null || val === undefined || val === '') return 0;
+      const str = String(val).replace(/[+,%]/g, '').trim();
+      const num = parseFloat(str);
+      return isNaN(num) ? 0 : num;
+    }
+    
+    async function processFile(file) {
+      try {
+        const data = await file.arrayBuffer();
+        const xlsxWb = XLSX.read(data, { type: 'array' });
+        const sheet = xlsxWb.Sheets[xlsxWb.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
+        
+        const buffer = await createExcel(jsonData);
+        files.get(file.name).status = 'done';
+        files.get(file.name).buffer = buffer;
+      } catch (err) {
+        files.get(file.name).status = 'error';
+        console.error(err);
+      }
+      renderFileList();
+    }
+    
+    async function createExcel(jsonData) {
+      const ExcelJS = window.ExcelJS;
+      const workbook = new ExcelJS.Workbook();
+      const ws = workbook.addWorksheet('クエリ比較');
+      
+      const d = getWeekDates();
+      const lastWeekStr = `${formatDate(d.lastSunday)} - ${formatDate(d.lastSaturday)}`;
+      const prevWeekStr = `${formatDate(d.prevSunday)} - ${formatDate(d.prevSaturday)}`;
+      
+      ws.columns = [
+        { width: 30 }, { width: 12 }, { width: 12 }, { width: 10 },
+        { width: 12 }, { width: 12 }, { width: 10 },
+        { width: 12 }, { width: 12 }, { width: 12 },
+        { width: 12 }, { width: 12 }, { width: 10 },
+        { width: 2 }, { width: 15 }, { width: 12 }
+      ];
+      
+      const header1Row = ws.addRow(['', 'クリック数', '', '', '表示回数', '', '', 'CTR', '', '', '掲載順位', '', '']);
+      [2, 5, 8, 11].forEach(col => {
+        const cell = header1Row.getCell(col);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF666666' } };
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.alignment = { horizontal: 'center' };
+      });
+      
+      const header2Row = ws.addRow(['上位のクエリ', lastWeekStr, prevWeekStr, '比較', lastWeekStr, prevWeekStr, '比較', lastWeekStr, prevWeekStr, '比較', lastWeekStr, prevWeekStr, '比較']);
+      header2Row.eachCell(cell => { cell.alignment = { horizontal: 'center' }; cell.font = { size: 9 }; });
+      
+      const originalHeader = jsonData[0];
+      const colMap = {};
+      originalHeader.forEach((col, idx) => {
+        const c = String(col || '').replace(/^\uFEFF/, '');
+        if (c === 'Query') colMap.query = idx;
+        if (c === '先週のクリック数') colMap.clickLast = idx;
+        if (c === '先々週のクリック数') colMap.clickPrev = idx;
+        if (c === '比較：クリック数') colMap.clickDiff = idx;
+        if (c === '先週の表示回数' || c === '先週の表次回数') colMap.impLast = idx;
+        if (c === '先々週の表示回数') colMap.impPrev = idx;
+        if (c === '比較：表示回数') colMap.impDiff = idx;
+        if (c === '先週のCTR') colMap.ctrLast = idx;
+        if (c === '先々週のCTR') colMap.ctrPrev = idx;
+        if (c === '比較（変化率）：CTR') colMap.ctrDiff = idx;
+        if (c === '先週の掲載順位') colMap.posLast = idx;
+        if (c === '先々週の掲載順位') colMap.posPrev = idx;
+        if (c === '比較：掲載順位') colMap.posDiff = idx;
+      });
+      
+      let upCount = 0, downCount = 0, clickLastSum = 0, clickPrevSum = 0, impLastSum = 0, impPrevSum = 0;
+      const ctrDiffValues = [];
+      
+      for (let i = 1; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        if (!row || !row[colMap.query]) continue;
+        
+        const posDiffNum = parseNum(row[colMap.posDiff]);
+        if (posDiffNum < 0) upCount++;
+        if (posDiffNum > 0) downCount++;
+        clickLastSum += parseNum(row[colMap.clickLast]);
+        clickPrevSum += parseNum(row[colMap.clickPrev]);
+        impLastSum += parseNum(row[colMap.impLast]);
+        impPrevSum += parseNum(row[colMap.impPrev]);
+        ctrDiffValues.push(parseNum(row[colMap.ctrDiff]));
+        
+        const dataRow = ws.addRow([
+          row[colMap.query],
+          parseNum(row[colMap.clickLast]), parseNum(row[colMap.clickPrev]), parseNum(row[colMap.clickDiff]),
+          parseNum(row[colMap.impLast]), parseNum(row[colMap.impPrev]), parseNum(row[colMap.impDiff]),
+          row[colMap.ctrLast], row[colMap.ctrPrev], row[colMap.ctrDiff],
+          parseNum(row[colMap.posLast]), parseNum(row[colMap.posPrev]), parseNum(row[colMap.posDiff])
+        ]);
+        
+        dataRow.getCell(4).numFmt = '+#,##0;-#,##0;0';
+        dataRow.getCell(7).numFmt = '+#,##0;-#,##0;0';
+        dataRow.getCell(11).numFmt = '0.00';
+        dataRow.getCell(12).numFmt = '0.00';
+        dataRow.getCell(13).numFmt = '+0.00;-0.00;0.00';
+      }
+      
+      const lastDataRow = ws.rowCount;
+      
+      ws.getCell('O3').value = '上昇したクエリ';
+      ws.getCell('O3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6B26B' } };
+      ws.getCell('O3').font = { color: { argb: 'FFFFFFFF' }, bold: true };
+      ws.getCell('O3').alignment = { horizontal: 'center' };
+      ws.getCell('P3').value = upCount;
+      
+      ws.getCell('O4').value = '下降したクエリ';
+      ws.getCell('O4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3D85C6' } };
+      ws.getCell('O4').font = { color: { argb: 'FFFFFFFF' }, bold: true };
+      ws.getCell('O4').alignment = { horizontal: 'center' };
+      ws.getCell('P4').value = downCount;
+      
+      ws.getCell('O6').value = 'クリック数合計';
+      ws.getCell('O6').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF93C47D' } };
+      ws.getCell('O6').font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      ws.getCell('O6').alignment = { horizontal: 'center' };
+      ws.getCell('O7').value = '先週'; ws.getCell('P7').value = clickLastSum;
+      ws.getCell('O8').value = '先々週'; ws.getCell('P8').value = clickPrevSum;
+      ws.getCell('O9').value = '差';
+      const clickDiff = clickLastSum - clickPrevSum;
+      ws.getCell('P9').value = clickDiff;
+      ws.getCell('P9').font = { color: { argb: clickDiff >= 0 ? 'FFFF0000' : 'FF0000FF' }, bold: true };
+      ws.getCell('P9').numFmt = '+#,##0;-#,##0;0';
+      
+      ws.getCell('O11').value = '表示回数合計';
+      ws.getCell('O11').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF8E7CC3' } };
+      ws.getCell('O11').font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      ws.getCell('O11').alignment = { horizontal: 'center' };
+      ws.getCell('O12').value = '先週'; ws.getCell('P12').value = impLastSum;
+      ws.getCell('O13').value = '先々週'; ws.getCell('P13').value = impPrevSum;
+      ws.getCell('O14').value = '差';
+      const impDiff = impLastSum - impPrevSum;
+      ws.getCell('P14').value = impDiff;
+      ws.getCell('P14').font = { color: { argb: impDiff >= 0 ? 'FFFF0000' : 'FF0000FF' }, bold: true };
+      ws.getCell('P14').numFmt = '+#,##0;-#,##0;0';
+      
+      ws.addConditionalFormatting({
+        ref: `D3:D${lastDataRow}`,
+        rules: [{ type: 'colorScale', cfvo: [{ type: 'min' }, { type: 'num', value: 0 }, { type: 'max' }], color: [{ argb: 'FF2196F3' }, { argb: 'FFFFFFFF' }, { argb: 'FFF44336' }] }]
+      });
+      ws.addConditionalFormatting({
+        ref: `G3:G${lastDataRow}`,
+        rules: [{ type: 'colorScale', cfvo: [{ type: 'min' }, { type: 'num', value: 0 }, { type: 'max' }], color: [{ argb: 'FF2196F3' }, { argb: 'FFFFFFFF' }, { argb: 'FFF44336' }] }]
+      });
+      ws.addConditionalFormatting({
+        ref: `M3:M${lastDataRow}`,
+        rules: [{ type: 'colorScale', cfvo: [{ type: 'num', value: -20 }, { type: 'num', value: 0 }, { type: 'num', value: 20 }], color: [{ argb: 'FFF44336' }, { argb: 'FFFFFFFF' }, { argb: 'FF2196F3' }] }]
+      });
+      
+      for (let i = 3; i <= lastDataRow; i++) {
+        const val = ctrDiffValues[i - 3];
+        if (val === 0) continue;
+        let color;
+        if (val > 0) {
+          const intensity = Math.min(Math.abs(val) / 100, 1);
+          color = `FFFF${Math.round(255-(255-67)*intensity).toString(16).padStart(2,'0')}${Math.round(255-(255-54)*intensity).toString(16).padStart(2,'0')}`;
+        } else {
+          const intensity = Math.min(Math.abs(val) / 100, 1);
+          color = `FF${Math.round(255-(255-33)*intensity).toString(16).padStart(2,'0')}${Math.round(255-(255-150)*intensity).toString(16).padStart(2,'0')}FF`;
+        }
+        ws.getCell(`J${i}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+      }
+      
+      ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 2 }];
+      return await workbook.xlsx.writeBuffer();
+    }
+  </script>
+</body>
+</html>
