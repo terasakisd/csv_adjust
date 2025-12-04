@@ -250,7 +250,7 @@
         { width: 30 }, { width: 12 }, { width: 12 }, { width: 10 },
         { width: 12 }, { width: 12 }, { width: 10 },
         { width: 12 }, { width: 12 }, { width: 12 },
-        { width: 12 }, { width: 12 }, { width: 10 },
+        { width: 12 }, { width: 12 }, { width: 12 },
         { width: 2 }, { width: 15 }, { width: 12 }
       ];
       
@@ -286,6 +286,7 @@
       
       let upCount = 0, downCount = 0, clickLastSum = 0, clickPrevSum = 0, impLastSum = 0, impPrevSum = 0;
       const ctrDiffValues = [];
+      const posDiffValues = [];
       
       for (let i = 1; i < jsonData.length; i++) {
         const row = jsonData[i];
@@ -298,21 +299,69 @@
         clickPrevSum += parseNum(row[colMap.clickPrev]);
         impLastSum += parseNum(row[colMap.impLast]);
         impPrevSum += parseNum(row[colMap.impPrev]);
-        ctrDiffValues.push(parseNum(row[colMap.ctrDiff]));
+        
+        // CTR: 先週 - 先々週 の差分を計算
+        const ctrLastNum = parseNum(row[colMap.ctrLast]);
+        const ctrPrevNum = parseNum(row[colMap.ctrPrev]);
+        const ctrDiff = ctrLastNum - ctrPrevNum;
+        ctrDiffValues.push(ctrDiff);
+        
+        posDiffValues.push(posDiffNum);
+        
+        // 掲載順位比較の表示文字列を作成
+        let posDiffStr = '';
+        if (posDiffNum < 0) {
+          posDiffStr = '+' + Math.abs(posDiffNum).toFixed(2);
+        } else if (posDiffNum > 0) {
+          posDiffStr = '-' + Math.abs(posDiffNum).toFixed(2);
+        } else {
+          posDiffStr = '0.00';
+        }
+        
+        // CTR比較の表示文字列を作成
+        let ctrDiffStr = '';
+        if (ctrDiff > 0) {
+          ctrDiffStr = '+' + ctrDiff.toFixed(2) + '%';
+        } else if (ctrDiff < 0) {
+          ctrDiffStr = ctrDiff.toFixed(2) + '%';
+        } else {
+          ctrDiffStr = '0%';
+        }
         
         const dataRow = ws.addRow([
           row[colMap.query],
           parseNum(row[colMap.clickLast]), parseNum(row[colMap.clickPrev]), parseNum(row[colMap.clickDiff]),
           parseNum(row[colMap.impLast]), parseNum(row[colMap.impPrev]), parseNum(row[colMap.impDiff]),
-          row[colMap.ctrLast], row[colMap.ctrPrev], row[colMap.ctrDiff],
-          parseNum(row[colMap.posLast]), parseNum(row[colMap.posPrev]), parseNum(row[colMap.posDiff])
+          row[colMap.ctrLast], row[colMap.ctrPrev], ctrDiffStr,
+          parseNum(row[colMap.posLast]), parseNum(row[colMap.posPrev]), posDiffStr
         ]);
         
         dataRow.getCell(4).numFmt = '+#,##0;-#,##0;0';
         dataRow.getCell(7).numFmt = '+#,##0;-#,##0;0';
         dataRow.getCell(11).numFmt = '0.00';
         dataRow.getCell(12).numFmt = '0.00';
-        dataRow.getCell(13).numFmt = '+0.00;-0.00;0.00';
+        
+        // H列I列（CTR）を右寄せに設定
+        dataRow.getCell(8).alignment = { horizontal: 'right' };
+        dataRow.getCell(9).alignment = { horizontal: 'right' };
+        
+        // J列（CTR比較）に枠線と右寄せを設定
+        dataRow.getCell(10).alignment = { horizontal: 'right' };
+        dataRow.getCell(10).border = {
+          top: { style: 'hair', color: { argb: 'FFD3D3D3' } },
+          left: { style: 'hair', color: { argb: 'FFD3D3D3' } },
+          bottom: { style: 'hair', color: { argb: 'FFD3D3D3' } },
+          right: { style: 'hair', color: { argb: 'FFD3D3D3' } }
+        };
+        
+        // M列（掲載順位比較）に枠線と右寄せを設定
+        dataRow.getCell(13).alignment = { horizontal: 'right' };
+        dataRow.getCell(13).border = {
+          top: { style: 'hair', color: { argb: 'FFD3D3D3' } },
+          left: { style: 'hair', color: { argb: 'FFD3D3D3' } },
+          bottom: { style: 'hair', color: { argb: 'FFD3D3D3' } },
+          right: { style: 'hair', color: { argb: 'FFD3D3D3' } }
+        };
       }
       
       const lastDataRow = ws.rowCount;
@@ -353,31 +402,47 @@
       ws.getCell('P14').font = { color: { argb: impDiff >= 0 ? 'FFFF0000' : 'FF0000FF' }, bold: true };
       ws.getCell('P14').numFmt = '+#,##0;-#,##0;0';
       
+      // クリック数比較のグラデーション
       ws.addConditionalFormatting({
         ref: `D3:D${lastDataRow}`,
         rules: [{ type: 'colorScale', cfvo: [{ type: 'min' }, { type: 'num', value: 0 }, { type: 'max' }], color: [{ argb: 'FF2196F3' }, { argb: 'FFFFFFFF' }, { argb: 'FFF44336' }] }]
       });
+      // 表示回数比較のグラデーション
       ws.addConditionalFormatting({
         ref: `G3:G${lastDataRow}`,
         rules: [{ type: 'colorScale', cfvo: [{ type: 'min' }, { type: 'num', value: 0 }, { type: 'max' }], color: [{ argb: 'FF2196F3' }, { argb: 'FFFFFFFF' }, { argb: 'FFF44336' }] }]
       });
-      ws.addConditionalFormatting({
-        ref: `M3:M${lastDataRow}`,
-        rules: [{ type: 'colorScale', cfvo: [{ type: 'num', value: -20 }, { type: 'num', value: 0 }, { type: 'num', value: 20 }], color: [{ argb: 'FFF44336' }, { argb: 'FFFFFFFF' }, { argb: 'FF2196F3' }] }]
-      });
       
+      // CTR比較のグラデーション（セルごとに設定）
       for (let i = 3; i <= lastDataRow; i++) {
         const val = ctrDiffValues[i - 3];
         if (val === 0) continue;
         let color;
         if (val > 0) {
-          const intensity = Math.min(Math.abs(val) / 100, 1);
+          const intensity = Math.min(Math.abs(val) / 5, 1);
           color = `FFFF${Math.round(255-(255-67)*intensity).toString(16).padStart(2,'0')}${Math.round(255-(255-54)*intensity).toString(16).padStart(2,'0')}`;
         } else {
-          const intensity = Math.min(Math.abs(val) / 100, 1);
+          const intensity = Math.min(Math.abs(val) / 5, 1);
           color = `FF${Math.round(255-(255-33)*intensity).toString(16).padStart(2,'0')}${Math.round(255-(255-150)*intensity).toString(16).padStart(2,'0')}FF`;
         }
         ws.getCell(`J${i}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+      }
+      
+      // 掲載順位比較の背景色（セルごとに設定）
+      for (let i = 3; i <= lastDataRow; i++) {
+        const val = posDiffValues[i - 3];
+        if (val === 0) continue;
+        let color;
+        if (val < 0) {
+          // 順位上昇（マイナス値）→ 赤背景
+          const intensity = Math.min(Math.abs(val) / 20, 1);
+          color = `FFFF${Math.round(255-(255-67)*intensity).toString(16).padStart(2,'0')}${Math.round(255-(255-54)*intensity).toString(16).padStart(2,'0')}`;
+        } else {
+          // 順位下降（プラス値）→ 青背景
+          const intensity = Math.min(Math.abs(val) / 20, 1);
+          color = `FF${Math.round(255-(255-33)*intensity).toString(16).padStart(2,'0')}${Math.round(255-(255-150)*intensity).toString(16).padStart(2,'0')}FF`;
+        }
+        ws.getCell(`M${i}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
       }
       
       ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 2 }];
