@@ -300,28 +300,46 @@
         impLastSum += parseNum(row[colMap.impLast]);
         impPrevSum += parseNum(row[colMap.impPrev]);
         
+        // 各値を取得
+        const clickLast = parseNum(row[colMap.clickLast]);
+        const clickPrev = parseNum(row[colMap.clickPrev]);
+        const impLast = parseNum(row[colMap.impLast]);
+        const impPrev = parseNum(row[colMap.impPrev]);
+        const posLast = parseNum(row[colMap.posLast]);
+        const posPrev = parseNum(row[colMap.posPrev]);
+        
+        // 比較値を計算（先々週が0の場合は先週の値を使用）
+        const clickDiffVal = clickPrev === 0 ? clickLast : parseNum(row[colMap.clickDiff]);
+        const impDiffVal = impPrev === 0 ? impLast : parseNum(row[colMap.impDiff]);
+        
         // CTR: 先週 - 先々週 の差分を計算
         const ctrLastNum = parseNum(row[colMap.ctrLast]);
         const ctrPrevNum = parseNum(row[colMap.ctrPrev]);
-        const ctrDiff = ctrLastNum - ctrPrevNum;
+        const ctrDiff = ctrPrevNum === 0 ? ctrLastNum : ctrLastNum - ctrPrevNum;
         ctrDiffValues.push(ctrDiff);
         
-        posDiffValues.push(posDiffNum);
+        // 掲載順位比較（先々週が0の場合は先週の値を使用）
+        const posDiffVal = posPrev === 0 ? posLast : posDiffNum;
+        posDiffValues.push(posDiffVal);
         
-        // 掲載順位比較の表示文字列を作成
+        // 掲載順位比較の表示文字列を作成（プラス記号なし）
         let posDiffStr = '';
-        if (posDiffNum < 0) {
-          posDiffStr = '+' + Math.abs(posDiffNum).toFixed(2);
+        if (posPrev === 0) {
+          posDiffStr = posLast.toFixed(2);
+        } else if (posDiffNum < 0) {
+          posDiffStr = Math.abs(posDiffNum).toFixed(2);
         } else if (posDiffNum > 0) {
           posDiffStr = '-' + Math.abs(posDiffNum).toFixed(2);
         } else {
           posDiffStr = '0.00';
         }
         
-        // CTR比較の表示文字列を作成
+        // CTR比較の表示文字列を作成（プラス記号なし）
         let ctrDiffStr = '';
-        if (ctrDiff > 0) {
-          ctrDiffStr = '+' + ctrDiff.toFixed(2) + '%';
+        if (ctrPrevNum === 0) {
+          ctrDiffStr = ctrLastNum.toFixed(2) + '%';
+        } else if (ctrDiff > 0) {
+          ctrDiffStr = ctrDiff.toFixed(2) + '%';
         } else if (ctrDiff < 0) {
           ctrDiffStr = ctrDiff.toFixed(2) + '%';
         } else {
@@ -330,14 +348,14 @@
         
         const dataRow = ws.addRow([
           row[colMap.query],
-          parseNum(row[colMap.clickLast]), parseNum(row[colMap.clickPrev]), parseNum(row[colMap.clickDiff]),
-          parseNum(row[colMap.impLast]), parseNum(row[colMap.impPrev]), parseNum(row[colMap.impDiff]),
+          clickLast, clickPrev, clickDiffVal,
+          impLast, impPrev, impDiffVal,
           row[colMap.ctrLast], row[colMap.ctrPrev], ctrDiffStr,
-          parseNum(row[colMap.posLast]), parseNum(row[colMap.posPrev]), posDiffStr
+          posLast, posPrev, posDiffStr
         ]);
         
-        dataRow.getCell(4).numFmt = '+#,##0;-#,##0;0';
-        dataRow.getCell(7).numFmt = '+#,##0;-#,##0;0';
+        dataRow.getCell(4).numFmt = '#,##0;-#,##0;0';
+        dataRow.getCell(7).numFmt = '#,##0;-#,##0;0';
         dataRow.getCell(11).numFmt = '0.00';
         dataRow.getCell(12).numFmt = '0.00';
         
